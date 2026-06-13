@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF Drop</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #21262d;
+      --accent: #6e76ff;
+      --accent-soft: rgba(110, 118, 255, 0.12);
+      --accent-glow: rgba(110, 118, 255, 0.35);
+      --text: #e6edf3;
+      --muted: #7d8590;
+      --success: #3fb950;
+      --error: #f85149;
+      --mono: 'JetBrains Mono', monospace;
+      --sans: 'Inter', sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2.5rem 2rem 4rem;
+    }
+
+    .wordmark {
+      font-family: var(--mono);
+      font-size: 0.85rem;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      text-transform: uppercase;
+      margin-bottom: 3rem;
+      opacity: 0.9;
+    }
+
+    .drop-zone {
+      width: 100%;
+      max-width: 520px;
+      aspect-ratio: 4/3;
+      border-radius: 16px;
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.2rem;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: background 0.2s;
+      border: 2px dashed var(--border);
+      animation: pulse-border 3s ease-in-out infinite;
+    }
+
+    .drop-zone::before {
+      content: '';
+      position: absolute;
+      inset: -2px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, var(--accent), transparent, var(--accent));
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .drop-zone.dragging {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .drop-zone.dragging::before { opacity: 0.4; }
+
+    @keyframes pulse-border {
+      0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); }
+      50% { box-shadow: 0 0 0 6px transparent; }
+    }
+
+    .drop-zone.loading, .drop-zone.done { animation: none; cursor: default; }
+
+    .drop-icon {
+      width: 56px; height: 56px; opacity: 0.55;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    .drop-zone.dragging .drop-icon { opacity: 1; transform: scale(1.1) translateY(-4px); }
+
+    .drop-label { font-size: 1.05rem; font-weight: 500; color: var(--text); }
+    .drop-sub { font-size: 0.82rem; color: var(--muted); font-family: var(--mono); }
+
+    .file-input { display: none; }
+
+    .browse-btn {
+      margin-top: 0.5rem; padding: 0.5rem 1.4rem;
+      border-radius: 8px; border: 1px solid var(--border);
+      background: transparent; color: var(--muted);
+      font-size: 0.8rem; font-family: var(--sans); cursor: pointer;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .browse-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .status-area {
+      width: 100%; max-width: 520px;
+      margin-top: 1.5rem; min-height: 56px;
+      display: flex; flex-direction: column; gap: 0.6rem;
+    }
+
+    .progress-bar-wrap { height: 3px; background: var(--border); border-radius: 99px; overflow: hidden; }
+    .progress-bar { height: 100%; background: var(--accent); border-radius: 99px; width: 0%; transition: width 0.4s ease; }
+
+    .status-text { font-size: 0.83rem; color: var(--muted); font-family: var(--mono); }
+
+    .result-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.1rem 1.3rem;
+      display: none; gap: 0.8rem; flex-direction: column;
+    }
+    .result-card.visible { display: flex; }
+
+    .result-filename { font-size: 0.85rem; font-weight: 500; color: var(--text); font-family: var(--mono); word-break: break-all; }
+
+    .result-link { display: flex; align-items: center; gap: 0.6rem; }
+
+    .link-box {
+      flex: 1; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 7px; padding: 0.45rem 0.7rem;
+      font-size: 0.75rem; font-family: var(--mono); color: var(--accent);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .copy-btn {
+      padding: 0.45rem 0.9rem; background: var(--accent); border: none;
+      border-radius: 7px; color: #fff; font-size: 0.78rem;
+      font-family: var(--sans); font-weight: 500; cursor: pointer;
+      white-space: nowrap; transition: opacity 0.2s;
+    }
+    .copy-btn:hover { opacity: 0.85; }
+
+    .open-btn {
+      display: block; text-align: center; padding: 0.6rem;
+      background: transparent; border: 1px solid var(--border);
+      border-radius: 7px; color: var(--muted); font-size: 0.8rem;
+      font-family: var(--sans); text-decoration: none;
+      transition: border-color 0.2s, color 0.2s;
+    }
+    .open-btn:hover { border-color: var(--success); color: var(--success); }
+
+    .new-btn {
+      align-self: center; margin-top: 0.5rem; padding: 0.4rem 1rem;
+      border-radius: 7px; border: 1px solid var(--border);
+      background: transparent; color: var(--muted); font-size: 0.78rem;
+      cursor: pointer; font-family: var(--sans); transition: color 0.2s, border-color 0.2s;
+    }
+    .new-btn:hover { border-color: var(--text); color: var(--text); }
+
+    .error-msg { color: var(--error); font-size: 0.8rem; font-family: var(--mono); display: none; }
+    .error-msg.visible { display: block; }
+
+    /* ── FILE HISTORY SECTION ── */
+    .history-section {
+      width: 100%; max-width: 520px;
+      margin-top: 3rem;
+    }
+
+    .history-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 1rem;
+    }
+
+    .history-title {
+      font-family: var(--mono); font-size: 0.75rem;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--muted);
+    }
+
+    .history-clear {
+      font-family: var(--mono); font-size: 0.72rem;
+      color: var(--muted); background: none; border: none;
+      cursor: pointer; padding: 0; opacity: 0.6;
+      transition: color 0.2s, opacity 0.2s;
+    }
+    .history-clear:hover { color: var(--error); opacity: 1; }
+
+    .history-empty {
+      text-align: center; padding: 2rem 0;
+      color: var(--muted); font-size: 0.8rem;
+      font-family: var(--mono); opacity: 0.5;
+      border: 1px dashed var(--border); border-radius: 12px;
+    }
+
+    .history-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+    .history-item {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 0.85rem 1rem;
+      display: flex; align-items: center; gap: 0.9rem;
+      transition: border-color 0.2s;
+      animation: slide-in 0.25s ease;
+    }
+    .history-item:hover { border-color: #30363d; }
+
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .history-item-icon {
+      width: 34px; height: 34px; flex-shrink: 0;
+      background: var(--accent-soft); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--accent);
+    }
+
+    .history-item-body { flex: 1; min-width: 0; }
+
+    .history-item-name {
+      font-size: 0.83rem; font-weight: 500; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-bottom: 0.2rem;
+    }
+
+    .history-item-meta {
+      font-size: 0.72rem; font-family: var(--mono); color: var(--muted);
+    }
+
+    .history-item-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+
+    .hist-btn {
+      padding: 0.35rem 0.65rem; border-radius: 6px;
+      font-size: 0.72rem; font-family: var(--sans);
+      cursor: pointer; border: 1px solid var(--border);
+      background: transparent; color: var(--muted);
+      transition: border-color 0.2s, color 0.2s;
+      white-space: nowrap;
+    }
+    .hist-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .hist-btn.open:hover { border-color: var(--success); color: var(--success); }
+    .hist-btn.del:hover { border-color: var(--error); color: var(--error); }
+
+    footer {
+      margin-top: 3rem; font-size: 0.73rem;
+      color: var(--muted); font-family: var(--mono); opacity: 0.5;
+    }
+
+    @media (max-width: 540px) {
+      .drop-zone { aspect-ratio: auto; min-height: 260px; }
+      .history-item-actions { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="wordmark">pdf//drop</div>
+
+  <div class="drop-zone" id="dropZone">
+    <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+      <polyline points="14 2 14 8 20 8"/>
+      <line x1="12" y1="18" x2="12" y2="12"/>
+      <polyline points="9 15 12 12 15 15"/>
+    </svg>
+    <span class="drop-label">Drop your PDF here</span>
+    <span class="drop-sub">PDF files only · no size limit</span>
+    <button class="browse-btn" id="browseBtn">or browse files</button>
+    <input type="file" accept="application/pdf" class="file-input" id="fileInput" />
+  </div>
+
+  <div class="status-area">
+    <div class="progress-bar-wrap" id="progressWrap" style="display:none">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div class="status-text" id="statusText"></div>
+    <div class="error-msg" id="errorMsg"></div>
+
+    <div class="result-card" id="resultCard">
+      <div class="result-filename" id="resultFilename"></div>
+      <div class="result-link">
+        <div class="link-box" id="linkBox"></div>
+        <button class="copy-btn" id="copyBtn">Copy</button>
+      </div>
+      <a class="open-btn" id="openBtn" href="#" target="_blank" rel="noopener">Open file →</a>
+      <button class="new-btn" id="newBtn">Upload another</button>
+    </div>
+  </div>
+
+  <!-- FILE HISTORY -->
+  <div class="history-section" id="historySection">
+    <div class="history-header">
+      <span class="history-title">Uploaded files</span>
+      <button class="history-clear" id="clearBtn">clear all</button>
+    </div>
+    <div class="history-empty" id="historyEmpty">no files uploaded yet</div>
+    <div class="history-list" id="historyList"></div>
+  </div>
+
+  <footer>files stored in your google drive · shareable across devices</footer>
+
+<script>
+  const dropZone     = document.getElementById('dropZone');
+  const fileInput    = document.getElementById('fileInput');
+  const browseBtn    = document.getElementById('browseBtn');
+  const progressWrap = document.getElementById('progressWrap');
+  const progressBar  = document.getElementById('progressBar');
+  const statusText   = document.getElementById('statusText');
+  const errorMsg     = document.getElementById('errorMsg');
+  const resultCard   = document.getElementById('resultCard');
+  const resultFilename = document.getElementById('resultFilename');
+  const linkBox      = document.getElementById('linkBox');
+  const copyBtn      = document.getElementById('copyBtn');
+  const openBtn      = document.getElementById('openBtn');
+  const newBtn       = document.getElementById('newBtn');
+  const historyList  = document.getElementById('historyList');
+  const historyEmpty = document.getElementById('historyEmpty');
+  const clearBtn     = document.getElementById('clearBtn');
+
+  // ── HISTORY STATE (persisted to localStorage) ──
+  const STORAGE_KEY = 'pdf_drop_history';
+  let history = [];
+
+  function loadHistory() {
+    try { history = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
+    catch { history = []; }
+    renderHistory();
+  }
+
+  function saveHistory() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+  }
+
+  function addToHistory(entry) {
+    history.unshift(entry); // newest first
+    if (history.length > 50) history = history.slice(0, 50);
+    saveHistory();
+    renderHistory();
+  }
+
+  function removeFromHistory(id) {
+    history = history.filter(e => e.id !== id);
+    saveHistory();
+    renderHistory();
+  }
+
+  function renderHistory() {
+    historyList.innerHTML = '';
+    if (history.length === 0) {
+      historyEmpty.style.display = 'block';
+      clearBtn.style.display = 'none';
+      return;
+    }
+    historyEmpty.style.display = 'none';
+    clearBtn.style.display = 'block';
+
+    history.forEach(entry => {
+      const item = document.createElement('div');
+      item.className = 'history-item';
+      item.innerHTML = `
+        <div class="history-item-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+          </svg>
+        </div>
+        <div class="history-item-body">
+          <div class="history-item-name" title="${entry.name}">${entry.name}</div>
+          <div class="history-item-meta">${entry.date} · ${entry.size}</div>
+        </div>
+        <div class="history-item-actions">
+          <button class="hist-btn" data-copy="${entry.link}">Copy link</button>
+          <a class="hist-btn open" href="${entry.link}" target="_blank" rel="noopener">Open</a>
+          <button class="hist-btn del" data-id="${entry.id}">✕</button>
+        </div>
+      `;
+
+      item.querySelector('[data-copy]').addEventListener('click', function() {
+        navigator.clipboard.writeText(this.dataset.copy).then(() => {
+          const orig = this.textContent;
+          this.textContent = 'Copied!';
+          setTimeout(() => this.textContent = orig, 2000);
+        });
+      });
+
+      item.querySelector('[data-id]').addEventListener('click', function() {
+        removeFromHistory(this.dataset.id);
+      });
+
+      historyList.appendChild(item);
+    });
+  }
+
+  clearBtn.addEventListener('click', () => {
+    if (confirm('Clear all upload history? (Files in Drive are not deleted)')) {
+      history = [];
+      saveHistory();
+      renderHistory();
+    }
+  });
+
+  // ── UPLOAD ──
+  browseBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragging'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragging'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault(); dropZone.classList.remove('dragging');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type === 'application/pdf') handleFile(file);
+    else showError('Only PDF files are supported.');
+  });
+
+  dropZone.addEventListener('click', e => {
+    if (e.target === dropZone || e.target.closest('.drop-icon') ||
+        e.target.classList.contains('drop-label') || e.target.classList.contains('drop-sub')) {
+      fileInput.click();
+    }
+  });
+
+  newBtn.addEventListener('click', reset);
+
+  copyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(linkBox.textContent).then(() => {
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => copyBtn.textContent = 'Copy', 2000);
+    });
+  });
+
+  function reset() {
+    dropZone.classList.remove('loading', 'done');
+    dropZone.style.pointerEvents = '';
+    progressWrap.style.display = 'none';
+    progressBar.style.width = '0%';
+    statusText.textContent = '';
+    errorMsg.textContent = '';
+    errorMsg.classList.remove('visible');
+    resultCard.classList.remove('visible');
+    fileInput.value = '';
+  }
+
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorMsg.classList.add('visible');
+    statusText.textContent = '';
+    progressWrap.style.display = 'none';
+    dropZone.classList.remove('loading');
+    dropZone.style.pointerEvents = '';
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function formatDate(ts) {
+    return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  async function handleFile(file) {
+    if (file.type !== 'application/pdf') { showError('Only PDF files are supported.'); return; }
+
+    dropZone.classList.add('loading');
+    dropZone.style.pointerEvents = 'none';
+    errorMsg.classList.remove('visible');
+    resultCard.classList.remove('visible');
+    progressWrap.style.display = 'block';
+    statusText.textContent = 'reading file…';
+    animateProgress(0, 20, 400);
+
+    try {
+      const base64 = await fileToBase64(file);
+      animateProgress(20, 45, 300);
+      statusText.textContent = 'uploading to google drive…';
+
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1000,
+          system: `You are a file upload assistant. The user will provide a PDF file as base64. 
+Upload it to Google Drive using the MCP tool, make it publicly shareable (anyone with link can view), 
+and return ONLY a JSON object like: {"success": true, "fileId": "...", "fileName": "...", "webViewLink": "...", "webContentLink": "..."}
+If it fails, return: {"success": false, "error": "reason"}
+Return ONLY the JSON with no other text.`,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+              { type: 'text', text: `Upload this PDF to Google Drive. The filename should be: ${file.name}. After uploading, make it shareable with "anyone with the link" permission (role: reader). Return the JSON with the shareable webViewLink.` }
+            ]
+          }],
+          mcp_servers: [{ type: 'url', url: 'https://drivemcp.googleapis.com/mcp/v1', name: 'google-drive-mcp' }]
+        })
+      });
+
+      animateProgress(45, 85, 1200);
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err?.error?.message || `API error ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      let result;
+      try {
+        const textBlock = data.content?.find(b => b.type === 'text');
+        if (!textBlock) throw new Error('No text response');
+        const clean = textBlock.text.replace(/```json|```/g, '').trim();
+        result = JSON.parse(clean);
+      } catch {
+        throw new Error('Could not parse upload response. Drive MCP may need authentication.');
+      }
+
+      if (!result.success) throw new Error(result.error || 'Upload failed');
+
+      animateProgress(85, 100, 300);
+      statusText.textContent = 'upload complete ✓';
+
+      const shareLink = result.webViewLink || `https://drive.google.com/file/d/${result.fileId}/view`;
+      const entry = {
+        id: result.fileId || Date.now().toString(),
+        name: result.fileName || file.name,
+        link: shareLink,
+        size: formatSize(file.size),
+        date: formatDate(Date.now())
+      };
+
+      setTimeout(() => {
+        statusText.textContent = '';
+        progressWrap.style.display = 'none';
+        dropZone.classList.remove('loading');
+        dropZone.classList.add('done');
+
+        resultFilename.textContent = entry.name;
+        linkBox.textContent = shareLink;
+        openBtn.href = shareLink;
+        resultCard.classList.add('visible');
+
+        // Add to history
+        addToHistory(entry);
+      }, 600);
+
+    } catch (err) {
+      showError(err.message || 'Upload failed. Please try again.');
+    }
+  }
+
+  function fileToBase64(file) {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result.split(',')[1]);
+      r.onerror = () => rej(new Error('Could not read file'));
+      r.readAsDataURL(file);
+    });
+  }
+
+  let progressInterval;
+  function animateProgress(from, to, duration) {
+    clearInterval(progressInterval);
+    const steps = 30;
+    const step = (to - from) / steps;
+    const delay = duration / steps;
+    let current = from;
+    progressBar.style.width = from + '%';
+    progressInterval = setInterval(() => {
+      current += step;
+      if (current >= to) { current = to; clearInterval(progressInterval); }
+      progressBar.style.width = current + '%';
+    }, delay);
+  }
+
+  // Init
+  loadHistory();
+</script>
+</body>
+</html>
